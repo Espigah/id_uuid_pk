@@ -1,0 +1,115 @@
+version: "3.5"
+services:
+  app_serial: &app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - db_serial
+      - db_uuid
+      - db_public_key
+      - prometheus
+      - grafana
+    networks:
+      - metrics
+    environment:
+      - MODE=serial
+      - DATABASE_URL=postgres://admin:admin@db_serial:5432/postgres
+
+  app_uuid:
+    <<: *app
+    hostname: app_uuid
+    environment:
+      - MODE=uuid
+      - DATABASE_URL=postgres://admin:admin@db_uuid:5432/postgres
+
+  app_public_key:
+    <<: *app
+    hostname: app_public_key
+    environment:
+      - MODE=public_key
+      - DATABASE_URL=postgres://admin:admin@db_public_key:5432/postgres
+
+  db_serial: &db
+    image: postgres:15
+    hostname: db_serial
+    environment:
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_USER=admin
+      - POSTGRES_DB=postgres
+    volumes:
+      - ./__tools__/postgres/sql/db_serial.sql:/docker-entrypoint-initdb.d/create.sql
+      - ./__tools__/postgres/postgresql.conf:/docker-entrypoint-initdb.d/postgresql.conf
+    command: 'postgres -c config_file="/docker-entrypoint-initdb.d/postgresql.conf"'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.4"
+          memory: "1.5GB"
+    ports:
+      - 5434:5432
+    networks:
+      - metrics
+
+  db_uuid:
+    <<: *db
+    hostname: db_uuid
+    ports:
+      - 5433:5432
+    volumes:
+      - ./__tools__/postgres/sql/db_uuid.sql:/docker-entrypoint-initdb.d/create.sql
+      - ./__tools__/postgres/postgresql.conf:/docker-entrypoint-initdb.d/postgresql.conf
+
+  db_public_key:
+    <<: *db
+    hostname: db_public_key
+    ports:
+      - 5432:5432
+    volumes:
+      - ./__tools__/postgres/sql/db_public_key.sql:/docker-entrypoint-initdb.d/create.sql
+      - ./__tools__/postgres/postgresql.conf:/docker-entrypoint-initdb.d/postgresql.conf
+
+  prometheus:
+    image: prom/prometheus
+    user: root
+    container_name: prometheus
+    hostname: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./__tools__/prometheus/config:/etc/prometheus
+      - ./__tools__/prometheus/data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    ports:
+      - 9090:9090
+    networks:
+      - metrics
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    hostname: grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: unless-stopped
+    volumes:
+      - ./__tools__/grafana/plugins:/var/lib/grafana/plugins/
+      - grafana_data:/var/lib/grafana
+    ports:
+      - 3000:3000
+    networks:
+      - metrics
+
+networks:
+  metrics:
+    driver: bridge
+
+volumes:
+  grafana_data:

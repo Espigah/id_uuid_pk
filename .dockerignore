@@ -1,0 +1,5 @@
+__docs__
+__tools__
+.vscode
+docker-compose.yml
+Dockerfile
